@@ -23,22 +23,52 @@ class activitypurgesExtensionController extends Controller
         $message = null;
 
         if ($request->isMethod('post')) {
-            // Validate the input timestamp.
+            // Validate the input.
+            // If "quick" is provided, the manual timestamp is not required.
             $validated = $request->validate([
-                'timestamp' => 'required|date'
+                'tables'    => 'required|array',
+                'tables.*'  => 'in:activity_logs,api_logs,audit_logs',
+                'timestamp' => 'required_without:quick|nullable|date',
+                'quick'     => 'nullable|in:7,14,30,90,180,365'
             ]);
 
-            // Convert the HTML datetime-local value to MySQL datetime format.
-            $rawTimestamp = $validated['timestamp'];
-            $mysqlTimestamp = date('Y-m-d H:i:s', strtotime($rawTimestamp));
+            // Determine the cutoff timestamp:
+            if ($request->has('quick')) {
+                $days = (int)$validated['quick'];
+                // Use Laravel's now() helper to subtract days.
+                $mysqlTimestamp = now()->subDays($days)->format('Y-m-d H:i:s');
+            } else {
+                $rawTimestamp = $validated['timestamp'];
+                $mysqlTimestamp = date('Y-m-d H:i:s', strtotime($rawTimestamp));
+            }
+
+            // Map each table to its respective date column.
+            $columnsMapping = [
+                'activity_logs' => 'timestamp',
+                'api_logs'      => 'updated_at',
+                'audit_logs'    => 'created_at', // Adjust if your audit_logs table uses a different column name.
+            ];
+
+            $deletedRecords = [];
 
             try {
-                // Purge records older than the provided timestamp.
-                $deleted = DB::table('activity_logs')
-                    ->where('timestamp', '<', $mysqlTimestamp)
-                    ->delete();
+                // Loop through each selected table and delete records older than the computed timestamp.
+                foreach ($validated['tables'] as $table) {
+                    // Get the date column for this table.
+                    $dateColumn = $columnsMapping[$table] ?? 'timestamp';
 
-                $message = "{$deleted} log(s) have been purged successfully.";
+                    $deleted = DB::table($table)
+                        ->where($dateColumn, '<', $mysqlTimestamp)
+                        ->delete();
+                    $deletedRecords[$table] = $deleted;
+                }
+
+                // Prepare a message summarizing the deletion results.
+                $msgParts = [];
+                foreach ($deletedRecords as $table => $count) {
+                    $msgParts[] = "{$table}: {$count} log(s)";
+                }
+                $message = "Purged records - " . implode(", ", $msgParts);
             } catch (\Exception $e) {
                 \Log::error('Purge error: ' . $e->getMessage());
                 $message = "An error occurred while purging logs.";
@@ -46,9 +76,9 @@ class activitypurgesExtensionController extends Controller
         }
 
         return $this->view->make('admin.extensions.activitypurges.index', [
-            'root' => "/admin/extensions/activitypurges",
+            'root'      => "/admin/extensions/activitypurges",
             'blueprint' => $this->blueprint,
-            'message' => $message,
+            'message'   => $message,
         ]);
     }
 

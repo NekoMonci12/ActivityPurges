@@ -3,15 +3,15 @@ info:
   identifier: "activitypurges"
   description: "Purgin Old Activity Logs From Database"
   flags: ""
-  version: "1.10"
+  version: "1.1.2"
   target: "beta-2024-12"
   author: "nekomonci12"
-  icon: "public/icon.jpg"
+  icon: ":public/icon.jpg"
   website: ""
 
 admin:
-  view: "admin/view.blade.php"
-  controller: "admin/controller.php"
+  view: ":admin/view.blade.php"
+  controller: ":admin/controller.php"
   css: ""
   wrapper: ""
 
